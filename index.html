@@ -591,8 +591,7 @@
         <button class="save-info viewer-pill" id="connectionText" type="button">Viewer: Click for Admin</button>
         <div class="save-info" id="lastSavedTopText">Last saved: -</div>
         <button class="primary-btn" id="refreshBtn">Refresh</button>
-        <button class="primary-btn" id="migrateLocalBtn" hidden>Upload old local data</button>
-        <button id="exportCsvBtn">Export CSV</button>
+
       </div>
     </section>
 
@@ -682,7 +681,6 @@
     const SUPABASE_URL = "https://quzlpwfomatazvidqacs.supabase.co";
     const SUPABASE_KEY = "sb_publishable_JBBQ2uXJhc1GfWR24Q9jSA_xQqiIYad";
     const ADMIN_PIN = "1234";
-    const OLD_LOCAL_STORAGE_KEY = "progressTrackingDashboardData_v1";
 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -715,8 +713,7 @@
       quickFilter: document.getElementById("quickFilter"),
       refreshBtn: document.getElementById("refreshBtn"),
       refreshSubmittedBtn: document.getElementById("refreshSubmittedBtn"),
-      migrateLocalBtn: document.getElementById("migrateLocalBtn"),
-      exportCsvBtn: document.getElementById("exportCsvBtn"),
+
       clearFiltersBtn: document.getElementById("clearFiltersBtn"),
       lastSavedText: document.getElementById("lastSavedText"),
       lastSavedTopText: document.getElementById("lastSavedTopText"),
@@ -754,8 +751,6 @@
       });
 
       els.connectionText.addEventListener("click", toggleAdminMode);
-      els.migrateLocalBtn.addEventListener("click", uploadOldLocalDataToSupabase);
-      els.exportCsvBtn.addEventListener("click", exportCsv);
       els.clearFiltersBtn.addEventListener("click", clearFilters);
     }
 
@@ -810,7 +805,6 @@
 
         updateLastSavedFromRecords();
         populateCategoryFilter();
-        updateMigrationButton();
         setConnection("Supabase: Online", true);
       } catch (error) {
         console.error(error);
@@ -856,10 +850,6 @@
       }
     }
 
-    function updateMigrationButton() {
-      const oldRaw = localStorage.getItem(OLD_LOCAL_STORAGE_KEY);
-      els.migrateLocalBtn.hidden = !oldRaw;
-    }
 
     function populateStaticFilters() {
       els.statusFilter.innerHTML = `<option value="all">All statuses</option>` +
@@ -1354,133 +1344,6 @@
       renderAll();
     }
 
-    async function uploadOldLocalDataToSupabase() {
-      if (!adminUnlocked) {
-        const pin = prompt("กรุณาใส่รหัส Admin ก่อน upload ข้อมูลเดิม");
-        if (pin !== ADMIN_PIN) {
-          if (pin !== null) showToast("รหัสไม่ถูกต้อง");
-          return;
-        }
-        adminUnlocked = true;
-        sessionStorage.setItem("gfe_progress_admin_unlocked", "true");
-        setConnection("Supabase: Online", true);
-      }
-
-      const oldRaw = localStorage.getItem(OLD_LOCAL_STORAGE_KEY);
-      if (!oldRaw) {
-        showToast("ไม่พบข้อมูล localStorage เดิมบน browser นี้");
-        return;
-      }
-
-      let oldData;
-      try {
-        oldData = JSON.parse(oldRaw);
-      } catch (error) {
-        showToast("อ่านข้อมูลเดิมไม่สำเร็จ");
-        return;
-      }
-
-      const oldRecords = Array.isArray(oldData.records) ? oldData.records : [];
-      if (!oldRecords.length) {
-        showToast("ไม่พบรายการ records ในข้อมูลเดิม");
-        return;
-      }
-
-      const confirmed = confirm(`พบข้อมูลเดิม ${oldRecords.length} รายการ ต้องการ upload ขึ้น Supabase และทับข้อมูลออนไลน์ที่ตรงกันหรือไม่?`);
-      if (!confirmed) return;
-
-      let updated = 0;
-      let skipped = 0;
-
-      for (const oldRecord of oldRecords) {
-        const onlineRecord = records.find(record =>
-          record.categoryKey === oldRecord.categoryId &&
-          record.locationKey === oldRecord.locationId
-        );
-
-        if (!onlineRecord) {
-          skipped += 1;
-          continue;
-        }
-
-        const payload = {
-          status: oldRecord.status || "Not Started",
-          revision: oldRecord.revision || "Rev.00",
-          responsible: oldRecord.responsible || "",
-          target_date: oldRecord.targetDate || null,
-          submitted_date: oldRecord.submittedDate || null,
-          approved_date: oldRecord.approvedDate || null,
-          remark: oldRecord.remark || ""
-        };
-
-        const { error } = await supabaseClient
-          .from("progress_records")
-          .update(payload)
-          .eq("id", onlineRecord.id);
-
-        if (error) {
-          console.error(error);
-          skipped += 1;
-        } else {
-          updated += 1;
-        }
-      }
-
-      await loadFromSupabase();
-      renderAll(true);
-      showToast(`Uploaded old data: ${updated} updated, ${skipped} skipped`);
-    }
-
-    function exportCsv() {
-      const rows = [[
-        "Category",
-        "Location Code",
-        "Location Name",
-        "Status",
-        "Revision",
-        "Responsible",
-        "Target Date",
-        "Submitted Date",
-        "Approved Date",
-        "Remark",
-        "Updated At"
-      ]];
-
-      records.forEach(record => {
-        const category = getCategory(record.categoryId);
-        const location = getLocation(record.locationId);
-        rows.push([
-          category?.name || "",
-          location?.code || "",
-          location?.name || "",
-          record.status,
-          record.revision,
-          record.responsible,
-          record.targetDate,
-          record.submittedDate,
-          record.approvedDate,
-          record.remark,
-          record.updatedAt
-        ]);
-      });
-
-      const csv = rows.map(row => row.map(csvEscape).join(",")).join("\n");
-      downloadFile("gfe-progress-tracking.csv", csv, "text/csv;charset=utf-8");
-      showToast("CSV exported");
-    }
-
-    function downloadFile(filename, content, mimeType) {
-      const blob = new Blob([content], { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }
-
     function daysPending(submittedDate) {
       if (!submittedDate) return 0;
       const submitted = new Date(submittedDate);
@@ -1510,10 +1373,6 @@
       });
     }
 
-    function csvEscape(value) {
-      const text = String(value ?? "");
-      return `"${text.replaceAll('"', '""')}"`;
-    }
 
     function escapeHtml(value) {
       return String(value ?? "")
