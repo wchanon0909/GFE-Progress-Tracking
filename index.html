@@ -629,7 +629,7 @@
 
     .import-summary {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
       padding: 14px 18px;
       border-bottom: 1px solid var(--line);
@@ -681,6 +681,38 @@
     .action-resubmitted { background: #ede9fe; color: #6d28d9; }
     .action-skip { background: #f3f4f6; color: #6b7280; }
     .action-unmatched { background: #fee2e2; color: #b91c1c; }
+
+    .import-category-group {
+      background: #eef2ff !important;
+      color: #3730a3;
+      font-weight: 950;
+      letter-spacing: -0.01em;
+    }
+
+    .import-category-group td {
+      padding: 10px 12px;
+      border-top: 1px solid #c7d2fe;
+      border-bottom: 1px solid #c7d2fe;
+    }
+
+    .import-category-group small {
+      color: #6366f1;
+      font-weight: 800;
+      margin-left: 8px;
+    }
+
+    .import-preview-wrap table th {
+      white-space: nowrap;
+      line-height: 1.15;
+    }
+
+    .import-preview-wrap table td {
+      line-height: 1.25;
+    }
+
+    .import-preview-wrap table {
+      min-width: 1120px;
+    }
 
     @media (max-width: 760px) {
       .import-modal-backdrop { padding: 8px; }
@@ -1616,7 +1648,7 @@
         pendingImportRows = buildWeeklyImportPreview(rows, file.name);
         renderImportPreview(pendingImportRows);
         els.confirmImportBtn.disabled = !pendingImportRows.some(row => row.matched && row.actions.length);
-        els.importStatusText.textContent = `Parsed ${file.name} · ${pendingImportRows.length} relevant rows · ${ignoredUnrelatedRows} unrelated rows ignored`;
+        els.importStatusText.textContent = `Parsed ${file.name} · ${pendingImportRows.length} relevant rows shown · ${ignoredUnrelatedRows} unrelated rows ignored`;
       } catch (error) {
         console.error(error);
         showToast("Cannot read Excel file. Please check file format.");
@@ -1838,13 +1870,13 @@
       const approved = rows.filter(row => row.actions.includes("Change to Approved")).length;
       const resub = rows.filter(row => row.actions.includes("Change to Re-Submitted")).length;
 
+      const grouped = groupImportRowsByCategory(rows);
+
       els.importSummary.innerHTML = `
-        <div class="import-metric"><span>Matched</span><strong>${matched}</strong></div>
-        <div class="import-metric"><span>Will update</span><strong>${willUpdate}</strong></div>
-        <div class="import-metric"><span>Suggested Approved</span><strong>${approved}</strong></div>
-        <div class="import-metric"><span>Re-Submitted</span><strong>${resub}</strong></div>
-        <div class="import-metric"><span>Unmatched</span><strong>${unmatched}</strong></div>
-        <div class="import-metric"><span>Ignored unrelated</span><strong>${ignoredUnrelatedRows}</strong></div>
+        <div class="import-metric"><span>Total relevant</span><strong>${rows.length}</strong></div>
+        <div class="import-metric"><span>Matched / Update</span><strong>${matched} / ${willUpdate}</strong></div>
+        <div class="import-metric"><span>Approved / Re-Submitted</span><strong>${approved} / ${resub}</strong></div>
+        <div class="import-metric"><span>Unmatched / Ignored</span><strong>${unmatched} / ${ignoredUnrelatedRows}</strong></div>
       `;
 
       if (!rows.length) {
@@ -1855,10 +1887,10 @@
       const header = `
         <thead>
           <tr>
-            <th>Submission No.</th>
+            <th>No.</th>
             <th>Current</th>
-            <th>Excel Submitted</th>
-            <th>Reply Rev</th>
+            <th>Submitted Date</th>
+            <th>Reply Rev.</th>
             <th>Reply Date</th>
             <th>Response</th>
             <th>Suggested</th>
@@ -1867,24 +1899,49 @@
         </thead>
       `;
 
-      const body = `
-        <tbody>
-          ${rows.map(row => `
-            <tr>
-              <td><span class="submission-no">${escapeHtml(row.submissionNo)}</span></td>
-              <td>${row.matched ? `<span class="status-pill ${statusClass(row.currentStatus)}">${escapeHtml(row.currentStatus)}</span>` : "-"}</td>
-              <td>${escapeHtml(row.submittedDate || "-")}</td>
-              <td>${escapeHtml(row.latestReplyRev || "-")}</td>
-              <td>${escapeHtml(row.latestReplyDate || "-")}</td>
-              <td>${escapeHtml(row.latestReplyResponse || "-")}</td>
-              <td>${row.matched ? `<span class="status-pill ${statusClass(row.suggestedStatus)}">${escapeHtml(row.suggestedStatus)}</span>` : `<span class="action-chip action-unmatched">Unmatched</span>`}</td>
-              <td>${row.actions.map(action => `<span class="action-chip ${actionClass(action)}">${escapeHtml(action)}</span>`).join("")}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      `;
+      const bodyRows = grouped.map(group => `
+        <tr class="import-category-group">
+          <td colspan="8">
+            ${escapeHtml(group.name)}
+            <small>${group.rows.length} records · ${group.rows.filter(row => row.matched).length} matched · ${group.rows.filter(row => row.actions.some(action => !action.startsWith("Skip"))).length} updates</small>
+          </td>
+        </tr>
+        ${group.rows.map(row => renderImportPreviewRow(row)).join("")}
+      `).join("");
 
-      els.importPreviewWrap.innerHTML = `<table>${header}${body}</table>`;
+      els.importPreviewWrap.innerHTML = `<table>${header}<tbody>${bodyRows}</tbody></table>`;
+    }
+
+    function renderImportPreviewRow(row) {
+      return `
+        <tr>
+          <td><span class="submission-no">${escapeHtml(row.submissionNo)}</span></td>
+          <td>${row.matched ? `<span class="status-pill ${statusClass(row.currentStatus)}">${escapeHtml(row.currentStatus)}</span>` : "-"}</td>
+          <td>${escapeHtml(row.submittedDate || "-")}</td>
+          <td>${escapeHtml(row.latestReplyRev || "-")}</td>
+          <td>${escapeHtml(row.latestReplyDate || "-")}</td>
+          <td>${escapeHtml(row.latestReplyResponse || "-")}</td>
+          <td>${row.matched ? `<span class="status-pill ${statusClass(row.suggestedStatus)}">${escapeHtml(row.suggestedStatus)}</span>` : `<span class="action-chip action-unmatched">Unmatched</span>`}</td>
+          <td>${row.actions.map(action => `<span class="action-chip ${actionClass(action)}">${escapeHtml(action)}</span>`).join("")}</td>
+        </tr>
+      `;
+    }
+
+    function groupImportRowsByCategory(rows) {
+      const groups = [
+        { key: "CIV-33180", name: "Instrumentation in D-wall Drawing", rows: [] },
+        { key: "CIV-33250", name: "AAA Report", rows: [] },
+        { key: "CIV-33260", name: "Stage Assessment Report", rows: [] },
+        { key: "CIV-33270", name: "Pile Impact Assessment Report", rows: [] }
+      ];
+
+      rows.forEach(row => {
+        const normalized = normalizeSubmissionNo(row.submissionNo);
+        const group = groups.find(item => normalized.startsWith(item.key));
+        if (group) group.rows.push(row);
+      });
+
+      return groups.filter(group => group.rows.length);
     }
 
     function actionClass(action) {
