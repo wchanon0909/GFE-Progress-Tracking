@@ -785,6 +785,7 @@
         <div class="save-info" id="lastSavedTopText">Last saved: -</div>
         <button class="primary-btn" id="refreshBtn">Refresh</button>
         <button class="primary-btn" id="importExcelBtn" hidden>Import Weekly Excel</button>
+        <div class="save-info" id="lastImportFileText" hidden>Last import: -</div>
         <input id="weeklyExcelInput" type="file" accept=".xlsx,.xls" hidden />
 
       </div>
@@ -883,14 +884,14 @@
       <div class="import-controls">
         <input id="weeklyExcelModalInput" type="file" accept=".xlsx,.xls" />
         <button class="primary-btn" id="parseExcelBtn" type="button">Preview Import</button>
-        <span class="readonly-note">Filtered: CIV-33180 / 33250 / 33260 / 33270</span>
+        <span class="readonly-note">Filtered: CIV-33180 / 33250 / 33260 / 33270 · PJ ignored</span>
       </div>
       <div class="import-summary" id="importSummary"></div>
       <div class="import-preview-wrap" id="importPreviewWrap">
         <div class="empty-state">Select a weekly Excel file, then click Preview Import.</div>
       </div>
       <div class="import-modal-footer">
-        <div class="readonly-note" id="importStatusText">No file parsed yet. Only CIV-33180, CIV-33250, CIV-33260 and CIV-33270 will be imported.</div>
+        <div class="readonly-note" id="importStatusText">No file parsed yet. PJ records are ignored. Last imported file is shown at the top menu.</div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button id="cancelImportBtn" type="button">Cancel</button>
           <button class="primary-btn" id="confirmImportBtn" type="button" disabled>Confirm Import to Supabase</button>
@@ -906,6 +907,8 @@
     const SUPABASE_KEY = "sb_publishable_JBBQ2uXJhc1GfWR24Q9jSA_xQqiIYad";
     const ADMIN_PIN = "1234";
     const ALLOWED_IMPORT_PREFIXES = ["CIV-33180", "CIV-33250", "CIV-33260", "CIV-33270"];
+    const IGNORED_IMPORT_SUFFIXES = ["PJ"];
+    const LAST_IMPORT_FILE_KEY = "gfe_progress_last_import_file";
 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -942,6 +945,7 @@
       quickFilter: document.getElementById("quickFilter"),
       refreshBtn: document.getElementById("refreshBtn"),
       importExcelBtn: document.getElementById("importExcelBtn"),
+      lastImportFileText: document.getElementById("lastImportFileText"),
       weeklyExcelInput: document.getElementById("weeklyExcelInput"),
       importModal: document.getElementById("importModal"),
       closeImportModalBtn: document.getElementById("closeImportModalBtn"),
@@ -1081,6 +1085,12 @@
 
     function updateAdminUi() {
       if (els.importExcelBtn) els.importExcelBtn.hidden = !adminUnlocked;
+      if (els.lastImportFileText) {
+        const lastFile = localStorage.getItem(LAST_IMPORT_FILE_KEY) || "-";
+        els.lastImportFileText.hidden = !adminUnlocked;
+        els.lastImportFileText.textContent = `Last import: ${lastFile}`;
+        els.lastImportFileText.title = `Last imported Excel file: ${lastFile}`;
+      }
     }
 
     function toggleAdminMode() {
@@ -1350,7 +1360,9 @@
       const grouped = categories
         .map(category => ({
           category,
-          records: filteredRecords.filter(record => record.categoryId === category.id)
+          records: filteredRecords
+            .filter(record => record.categoryId === category.id)
+            .sort((a, b) => (getLocation(a.locationId)?.sortOrder ?? 999) - (getLocation(b.locationId)?.sortOrder ?? 999))
         }))
         .filter(group => group.records.length);
 
@@ -1623,7 +1635,7 @@
       els.weeklyExcelModalInput.value = "";
       els.importSummary.innerHTML = "";
       els.importPreviewWrap.innerHTML = `<div class="empty-state">Select a weekly Excel file, then click Preview Import.</div>`;
-      els.importStatusText.textContent = "No file parsed yet. Only CIV-33180, CIV-33250, CIV-33260 and CIV-33270 will be imported.";
+      els.importStatusText.textContent = "No file parsed yet. PJ records are ignored. Last imported file is shown at the top menu.";
       els.confirmImportBtn.disabled = true;
       els.importModal.classList.add("show");
     }
@@ -1716,6 +1728,8 @@
 
     function isRelevantSubmissionNo(submissionNo) {
       const normalized = normalizeSubmissionNo(submissionNo);
+      const suffix = normalized.split("-").at(-1);
+      if (IGNORED_IMPORT_SUFFIXES.includes(suffix)) return false;
       return ALLOWED_IMPORT_PREFIXES.some(prefix => normalized.startsWith(prefix));
     }
 
@@ -1765,6 +1779,19 @@
       return String(value || "").trim().toUpperCase().replace(/\s+/g, "");
     }
 
+    function extractSubmittedRevFromRemark(text) {
+      const value = String(text || "");
+      const match = value.match(/Rev\.?\s*([A-Z0-9]+)/i);
+      return match ? match[1].toUpperCase() : "";
+    }
+
+    function isRevisionAfterFirst(rev) {
+      const value = String(rev || "").trim().toUpperCase();
+      if (!value) return false;
+      if (value === "A" || value === "0" || value === "00" || value === "01") return false;
+      return true;
+    }
+
     function suggestImportActions(record, excelData) {
       const actions = [];
       const payload = {};
@@ -1773,10 +1800,12 @@
       const submittedIsNewer = excelData.submittedDate && (!record.submittedDate || excelData.submittedDate > record.submittedDate);
       const approvedDate = record.approvedDate || "";
       const isAfterApproval = excelData.submittedDate && approvedDate && excelData.submittedDate > approvedDate;
+      const submittedRevFromRemark = extractSubmittedRevFromRemark(excelData.weeklyRemark);
+      const appearsResubmittedByRev = excelData.submittedDate && isRevisionAfterFirst(submittedRevFromRemark);
 
       if (submittedIsNewer) {
         payload.submitted_date = excelData.submittedDate;
-        if (isAfterApproval || record.status === "Approved") {
+        if (isAfterApproval || record.status === "Approved" || appearsResubmittedByRev) {
           suggestedStatus = "Re-Submitted";
           actions.push("Change to Re-Submitted");
         } else if (!["Approved", "Re-Submitted"].includes(record.status)) {
@@ -1785,6 +1814,12 @@
         } else {
           actions.push("Update submitted date");
         }
+      }
+
+      if (!submittedIsNewer && appearsResubmittedByRev && !["Approved", "Re-Submitted"].includes(record.status)) {
+        suggestedStatus = "Re-Submitted";
+        payload.status = suggestedStatus;
+        actions.push("Change to Re-Submitted");
       }
 
       const replyIsNewer = excelData.latestReplyDate && (!record.latestReplyDate || excelData.latestReplyDate > record.latestReplyDate);
@@ -1832,9 +1867,10 @@
     function buildImportRemarkBlock(record, excelData, suggestedStatus) {
       const lines = [];
       const dateLabel = new Date().toISOString().slice(0, 10);
-      lines.push(`[Weekly Excel Import: ${dateLabel}]`);
-      lines.push(`File: ${excelData.fileName}`);
+      lines.push(`[Weekly Update: ${dateLabel}]`);
       if (excelData.submittedDate) lines.push(`Submitted Date: ${excelData.submittedDate}`);
+      const submittedRev = extractSubmittedRevFromRemark(excelData.weeklyRemark);
+      if (submittedRev) lines.push(`Submitted Rev: ${submittedRev}`);
       if (record.status === "Approved" && suggestedStatus === "Re-Submitted") {
         lines.push(`Re-submitted after previous approval.`);
         if (record.approvedDate) lines.push(`Previous Approved Date: ${record.approvedDate}`);
@@ -1983,6 +2019,8 @@
         }
       }
 
+      localStorage.setItem(LAST_IMPORT_FILE_KEY, pendingImportFileName || "Unknown file");
+      updateAdminUi();
       await loadFromSupabase();
       renderAll(true);
       renderImportPreview(pendingImportRows);
