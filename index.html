@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Progress Tracking Dashboard</title>
+  <title>GFE Progress Tracking Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
       --bg: #f5f7fb;
@@ -29,9 +30,7 @@
       --on-hold-text: #b91c1c;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -70,7 +69,27 @@
       display: flex;
       flex-wrap: wrap;
       justify-content: flex-end;
+      align-items: center;
       gap: 10px;
+    }
+
+    .save-info {
+      min-width: 220px;
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--muted);
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
+    }
+
+    .online-pill {
+      background: #dcfce7;
+      color: #166534;
+      border-color: #bbf7d0;
     }
 
     button,
@@ -94,6 +113,12 @@
       box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
     }
 
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
     .primary-btn {
       background: var(--primary);
       color: white;
@@ -104,10 +129,6 @@
       background: #fff1f2;
       color: #be123c;
       border-color: #fecdd3;
-    }
-
-    input[type="file"] {
-      display: none;
     }
 
     .kpi-grid {
@@ -230,13 +251,8 @@
       border-color: #bfdbfe;
     }
 
-    .view {
-      display: none;
-    }
-
-    .view.active {
-      display: block;
-    }
+    .view { display: none; }
+    .view.active { display: block; }
 
     .category-grid {
       display: grid;
@@ -290,9 +306,7 @@
       padding: 7px 8px;
     }
 
-    .panel {
-      overflow: hidden;
-    }
+    .panel { overflow: hidden; }
 
     .panel-header {
       display: flex;
@@ -315,9 +329,7 @@
       font-size: 12px;
     }
 
-    .table-wrap {
-      overflow: auto;
-    }
+    .table-wrap { overflow: auto; }
 
     table {
       width: 100%;
@@ -325,8 +337,7 @@
       min-width: 980px;
     }
 
-    th,
-    td {
+    th, td {
       border-bottom: 1px solid var(--line);
       padding: 12px 10px;
       text-align: left;
@@ -345,9 +356,7 @@
       z-index: 1;
     }
 
-    tbody tr:hover {
-      background: #fbfdff;
-    }
+    tbody tr:hover { background: #fbfdff; }
 
     .location-cell {
       min-width: 230px;
@@ -362,9 +371,7 @@
       z-index: 3;
     }
 
-    .location-code {
-      font-weight: 800;
-    }
+    .location-code { font-weight: 800; }
 
     .location-name {
       color: var(--muted);
@@ -372,7 +379,8 @@
       margin-top: 3px;
     }
 
-    .status-pill {
+    .status-pill,
+    .pending-pill {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -383,35 +391,12 @@
       white-space: nowrap;
     }
 
-    .status-Not-Started {
-      background: var(--not-started-bg);
-      color: var(--not-started-text);
-    }
-
-    .status-In-Progress {
-      background: var(--in-progress-bg);
-      color: var(--in-progress-text);
-    }
-
-    .status-Internal-Review {
-      background: var(--internal-review-bg);
-      color: var(--internal-review-text);
-    }
-
-    .status-Submitted {
-      background: var(--submitted-bg);
-      color: var(--submitted-text);
-    }
-
-    .status-Approved {
-      background: var(--approved-bg);
-      color: var(--approved-text);
-    }
-
-    .status-On-Hold {
-      background: var(--on-hold-bg);
-      color: var(--on-hold-text);
-    }
+    .status-Not-Started { background: var(--not-started-bg); color: var(--not-started-text); }
+    .status-In-Progress { background: var(--in-progress-bg); color: var(--in-progress-text); }
+    .status-Internal-Review { background: var(--internal-review-bg); color: var(--internal-review-text); }
+    .status-Submitted { background: var(--submitted-bg); color: var(--submitted-text); }
+    .status-Approved { background: var(--approved-bg); color: var(--approved-text); }
+    .status-On-Hold { background: var(--on-hold-bg); color: var(--on-hold-text); }
 
     .matrix-status-bar {
       display: flex;
@@ -458,6 +443,12 @@
       border-radius: 16px;
       padding: 14px;
       box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+      transition: 0.25s ease;
+    }
+
+    .record-card.highlight {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14), 0 10px 26px rgba(15, 23, 42, 0.08);
     }
 
     .record-head {
@@ -485,15 +476,45 @@
       gap: 10px;
     }
 
-    .full-width {
-      grid-column: 1 / -1;
-    }
+    .full-width { grid-column: 1 / -1; }
 
     .empty-state {
       text-align: center;
       color: var(--muted);
       padding: 50px 20px;
     }
+
+    .submitted-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfdff;
+    }
+
+    .submitted-metric {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      background: white;
+    }
+
+    .submitted-metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+
+    .submitted-metric strong {
+      font-size: 24px;
+      letter-spacing: -0.04em;
+    }
+
+    .pending-ok { background: #dcfce7; color: #166534; }
+    .pending-watch { background: #fef3c7; color: #92400e; }
+    .pending-delay { background: #fee2e2; color: #b91c1c; }
 
     .toast {
       position: fixed;
@@ -525,43 +546,25 @@
     }
 
     @media (max-width: 1180px) {
-      .category-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-      }
-
-      .kpi-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .toolbar {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+      .category-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 760px) {
-      .app {
-        padding: 18px;
-      }
-
-      .topbar {
-        flex-direction: column;
-      }
-
-      .actions {
-        justify-content: flex-start;
-      }
-
+      .app { padding: 18px; }
+      .topbar { flex-direction: column; }
+      .actions { justify-content: flex-start; }
       .category-grid,
       .kpi-grid,
       .toolbar,
       .detail-grid,
-      .form-grid {
+      .form-grid,
+      .submitted-summary {
         grid-template-columns: 1fr;
       }
-
-      .category-card h3 {
-        min-height: unset;
-      }
+      .category-card h3 { min-height: unset; }
+      .save-info { min-width: auto; width: 100%; }
     }
   </style>
 </head>
@@ -569,16 +572,14 @@
   <main class="app">
     <section class="topbar">
       <div class="title-block">
-        <h1>Progress Tracking Dashboard</h1>
-        <p>AAA Report / Stage Assessment / Pile Impact / Instrumentation in D-wall Drawing</p>
+        <h1>GFE Progress Tracking Dashboard</h1>
+        <p>Instrumentation in D-wall Drawing / AAA Report / Stage Assessment / Pile Impact</p>
       </div>
       <div class="actions">
-        <button class="primary-btn" id="saveBtn">Save</button>
-        <button id="exportJsonBtn">Export JSON</button>
-        <label class="button-label" for="importJsonInput">Import JSON</label>
-        <input id="importJsonInput" type="file" accept="application/json,.json" />
+        <div class="save-info online-pill" id="connectionText">Supabase: Connecting...</div>
+        <div class="save-info" id="lastSavedTopText">Last saved: -</div>
+        <button class="primary-btn" id="refreshBtn">Refresh</button>
         <button id="exportCsvBtn">Export CSV</button>
-        <button class="danger-btn" id="resetBtn">Reset</button>
       </div>
     </section>
 
@@ -612,6 +613,7 @@
       <button class="tab-btn active" data-view="dashboardView">Dashboard View</button>
       <button class="tab-btn" data-view="matrixView">Matrix View</button>
       <button class="tab-btn" data-view="detailView">Detail View</button>
+      <button class="tab-btn" data-view="submittedView">Submitted View</button>
     </nav>
 
     <section id="dashboardView" class="view active">
@@ -623,7 +625,7 @@
         <div class="panel-header">
           <div>
             <h2>Matrix View</h2>
-            <p>Update status directly in the table. Data is stored in this browser.</p>
+            <p>Read-only overview. Use Detail View to edit progress records.</p>
           </div>
           <span class="readonly-note">Read-only view · use Detail View to edit</span>
         </div>
@@ -644,44 +646,30 @@
       </div>
     </section>
 
-    <div class="footer-note">Last saved: <span id="lastSavedText">Not saved yet</span></div>
+    <section id="submittedView" class="view">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Submitted View</h2>
+            <p>Weekly follow-up list for documents currently submitted and pending approval.</p>
+          </div>
+          <button id="refreshSubmittedBtn">Refresh</button>
+        </div>
+        <div class="submitted-summary" id="submittedSummary"></div>
+        <div class="table-wrap" id="submittedTableWrap"></div>
+      </div>
+    </section>
+
+    <div class="footer-note">Database updated: <span id="lastSavedText">-</span></div>
   </main>
 
   <div class="toast" id="toast"></div>
 
   <script>
-    const STORAGE_KEY = "progressTrackingDashboardData_v1";
+    const SUPABASE_URL = "https://quzlpwfomatazvidqacs.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_JBBQ2uXJhc1GfWR24Q9jSA_xQqiIYad";
 
-    const categories = [
-      { id: "aaa", name: "AAA Report" },
-      { id: "stage", name: "Stage Assessment Report" },
-      { id: "pile", name: "Pile Impact Assessment Report" },
-      { id: "dwall", name: "Instrumentation in D-wall Drawing" }
-    ];
-
-    const locations = [
-      { id: "or02", code: "OR02", name: "Bang Khun Non Station" },
-      { id: "is01", code: "Intervention Shaft No.01", name: "" },
-      { id: "or03", code: "OR03", name: "Siriraj Station" },
-      { id: "eee", code: "Emergency Exit Entrance", name: "" },
-      { id: "or04", code: "OR04", name: "Sanam Luang Station" },
-      { id: "is02", code: "Intervention Shaft No.02", name: "" },
-      { id: "or05", code: "OR05", name: "Democracy Monument Station" },
-      { id: "or06", code: "OR06", name: "Lan Luang Station" },
-      { id: "or07", code: "OR07", name: "Yommarat Station" },
-      { id: "is03", code: "Intervention Shaft No.03", name: "" },
-      { id: "or08", code: "OR08", name: "Ratchathewi Station" },
-      { id: "or09", code: "OR09", name: "Pratunam Station" },
-      { id: "is04", code: "Intervention Shaft No.04", name: "" },
-      { id: "or10", code: "OR10", name: "Ratchaprarop Station" },
-      { id: "is05", code: "Intervention Shaft No.05", name: "" },
-      { id: "is06", code: "Intervention Shaft No.06", name: "" },
-      { id: "or11", code: "OR11", name: "Din Daeng Station" },
-      { id: "is07", code: "Intervention Shaft No.07", name: "" },
-      { id: "or12", code: "OR12", name: "Pracha Songkhro Station" },
-      { id: "is07a", code: "Intervention Shaft No.07A", name: "" },
-      { id: "retrieval", code: "Retrieval Shaft", name: "" }
-    ];
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     const statuses = [
       { name: "Not Started", weight: 0 },
@@ -692,84 +680,156 @@
       { name: "On Hold", weight: 20 }
     ];
 
+    let categories = [];
+    let locations = [];
     let records = [];
     let lastSaved = null;
+    let isSaving = false;
 
     const els = {
       kpiGrid: document.getElementById("kpiGrid"),
       categoryGrid: document.getElementById("categoryGrid"),
       matrixTableWrap: document.getElementById("matrixTableWrap"),
       detailList: document.getElementById("detailList"),
+      submittedSummary: document.getElementById("submittedSummary"),
+      submittedTableWrap: document.getElementById("submittedTableWrap"),
       searchInput: document.getElementById("searchInput"),
       categoryFilter: document.getElementById("categoryFilter"),
       statusFilter: document.getElementById("statusFilter"),
       quickFilter: document.getElementById("quickFilter"),
-      saveBtn: document.getElementById("saveBtn"),
-      exportJsonBtn: document.getElementById("exportJsonBtn"),
-      importJsonInput: document.getElementById("importJsonInput"),
+      refreshBtn: document.getElementById("refreshBtn"),
+      refreshSubmittedBtn: document.getElementById("refreshSubmittedBtn"),
       exportCsvBtn: document.getElementById("exportCsvBtn"),
-      resetBtn: document.getElementById("resetBtn"),
       clearFiltersBtn: document.getElementById("clearFiltersBtn"),
-      markFilteredApprovedBtn: document.getElementById("markFilteredApprovedBtn"),
       lastSavedText: document.getElementById("lastSavedText"),
+      lastSavedTopText: document.getElementById("lastSavedTopText"),
+      connectionText: document.getElementById("connectionText"),
       toast: document.getElementById("toast")
     };
 
-    function createDefaultRecords() {
-      return categories.flatMap(category =>
-        locations.map(location => ({
-          id: `${category.id}__${location.id}`,
-          categoryId: category.id,
-          locationId: location.id,
-          status: "Not Started",
-          revision: "Rev.00",
-          responsible: "",
-          targetDate: "",
-          submittedDate: "",
-          approvedDate: "",
-          remark: ""
-        }))
-      );
+    async function initApp() {
+      populateStaticFilters();
+      await loadFromSupabase();
+      bindEvents();
+      renderAll();
     }
 
-    function loadData() {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (!saved) {
-        records = createDefaultRecords();
-        lastSaved = null;
-        return;
-      }
+    function bindEvents() {
+      document.querySelectorAll(".tab-btn").forEach(button => {
+        button.addEventListener("click", () => switchView(button.dataset.view));
+      });
 
+      [els.searchInput, els.categoryFilter, els.statusFilter, els.quickFilter].forEach(control => {
+        control.addEventListener("input", () => renderAll());
+        control.addEventListener("change", () => renderAll());
+      });
+
+      els.refreshBtn.addEventListener("click", async () => {
+        await loadFromSupabase();
+        renderAll();
+        showToast("Data refreshed from Supabase");
+      });
+
+      els.refreshSubmittedBtn.addEventListener("click", async () => {
+        await loadFromSupabase();
+        renderAll();
+        showToast("Submitted View refreshed");
+      });
+
+      els.exportCsvBtn.addEventListener("click", exportCsv);
+      els.clearFiltersBtn.addEventListener("click", clearFilters);
+    }
+
+    async function loadFromSupabase() {
       try {
-        const parsed = JSON.parse(saved);
-        records = mergeWithDefaultRecords(parsed.records || []);
-        lastSaved = parsed.lastSaved || null;
+        setConnection("Supabase: Loading...", false);
+
+        const [categoryResult, locationResult, recordResult] = await Promise.all([
+          supabaseClient.from("categories").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
+          supabaseClient.from("locations").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
+          supabaseClient
+            .from("progress_records")
+            .select("*, categories(category_key, name, sort_order), locations(location_key, code, name, sort_order)")
+            .order("updated_at", { ascending: false })
+        ]);
+
+        if (categoryResult.error) throw categoryResult.error;
+        if (locationResult.error) throw locationResult.error;
+        if (recordResult.error) throw recordResult.error;
+
+        categories = (categoryResult.data || []).map(row => ({
+          id: row.id,
+          key: row.category_key,
+          name: row.name,
+          sortOrder: row.sort_order
+        }));
+
+        locations = (locationResult.data || []).map(row => ({
+          id: row.id,
+          key: row.location_key,
+          code: row.code,
+          name: row.name || "",
+          sortOrder: row.sort_order
+        }));
+
+        records = (recordResult.data || []).map(row => ({
+          id: row.id,
+          categoryId: row.category_id,
+          locationId: row.location_id,
+          status: row.status || "Not Started",
+          revision: row.revision || "Rev.00",
+          responsible: row.responsible || "",
+          targetDate: row.target_date || "",
+          submittedDate: row.submitted_date || "",
+          approvedDate: row.approved_date || "",
+          remark: row.remark || "",
+          createdAt: row.created_at || "",
+          updatedAt: row.updated_at || ""
+        }));
+
+        updateLastSavedFromRecords();
+        populateCategoryFilter();
+        setConnection("Supabase: Online", true);
       } catch (error) {
-        records = createDefaultRecords();
-        lastSaved = null;
-        showToast("Could not load saved data. Default data loaded.");
+        console.error(error);
+        setConnection("Supabase: Error", false);
+        showToast("Cannot load Supabase data. Check SQL/RLS/API key.");
       }
     }
 
-    function mergeWithDefaultRecords(existingRecords) {
-      const defaults = createDefaultRecords();
-      const existingMap = new Map(existingRecords.map(item => [item.id, item]));
-      return defaults.map(item => ({ ...item, ...(existingMap.get(item.id) || {}) }));
+    function setConnection(text, ok) {
+      els.connectionText.textContent = text;
+      els.connectionText.classList.toggle("online-pill", ok);
     }
 
-    function saveData(silent = false) {
-      lastSaved = new Date().toISOString();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ records, lastSaved }, null, 2));
+    function populateStaticFilters() {
+      els.statusFilter.innerHTML = `<option value="all">All statuses</option>` +
+        statuses.map(status => `<option value="${escapeHtml(status.name)}">${escapeHtml(status.name)}</option>`).join("");
+    }
+
+    function populateCategoryFilter() {
+      const current = els.categoryFilter.value || "all";
+      els.categoryFilter.innerHTML = `<option value="all">All categories</option>` +
+        categories.map(category => `<option value="${category.id}">${escapeHtml(category.name)}</option>`).join("");
+      if (current === "all" || categories.some(category => category.id === current)) {
+        els.categoryFilter.value = current;
+      }
+    }
+
+    function updateLastSavedFromRecords() {
+      const latest = records
+        .map(record => record.updatedAt)
+        .filter(Boolean)
+        .sort()
+        .at(-1);
+      lastSaved = latest || null;
       updateLastSavedText();
-      if (!silent) showToast("Saved successfully");
     }
 
     function updateLastSavedText() {
-      if (!lastSaved) {
-        els.lastSavedText.textContent = "Not saved yet";
-        return;
-      }
-      els.lastSavedText.textContent = new Date(lastSaved).toLocaleString();
+      const text = lastSaved ? formatDateTime(lastSaved) : "-";
+      els.lastSavedText.textContent = text;
+      els.lastSavedTopText.textContent = `Last saved: ${text}`;
     }
 
     function statusWeight(statusName) {
@@ -803,6 +863,8 @@
       return records.filter(record => {
         const category = getCategory(record.categoryId);
         const location = getLocation(record.locationId);
+        if (!category || !location) return false;
+
         const searchable = `${category.name} ${location.code} ${location.name} ${record.revision} ${record.responsible} ${record.remark}`.toLowerCase();
 
         if (search && !searchable.includes(search)) return false;
@@ -822,6 +884,16 @@
       });
     }
 
+    function getSubmittedRecords() {
+      return records
+        .filter(record => record.status === "Submitted")
+        .sort((a, b) => {
+          const dateA = a.submittedDate || "9999-12-31";
+          const dateB = b.submittedDate || "9999-12-31";
+          return dateA.localeCompare(dateB);
+        });
+    }
+
     function calculateStats(targetRecords = records) {
       const total = targetRecords.length || 1;
       const score = Math.round(targetRecords.reduce((sum, record) => sum + statusWeight(record.status), 0) / total);
@@ -837,18 +909,11 @@
       return calculateStats(records.filter(record => record.categoryId === categoryId));
     }
 
-    function populateFilters() {
-      els.categoryFilter.innerHTML = `<option value="all">All categories</option>` +
-        categories.map(category => `<option value="${category.id}">${escapeHtml(category.name)}</option>`).join("");
-
-      els.statusFilter.innerHTML = `<option value="all">All statuses</option>` +
-        statuses.map(status => `<option value="${escapeHtml(status.name)}">${escapeHtml(status.name)}</option>`).join("");
-    }
-
     function renderKpis() {
-      const stats = calculateStats(getFilteredRecords());
+      const filtered = getFilteredRecords();
+      const stats = calculateStats(filtered);
       const totalPossible = records.length;
-      const filteredTotal = getFilteredRecords().length;
+      const filteredTotal = filtered.length;
       const kpis = [
         { label: "Overall Progress", value: `${stats.score}%`, note: `${filteredTotal} / ${totalPossible} filtered records`, progress: stats.score },
         { label: "Approved", value: stats.approved, note: "Completed records", progress: Math.round((stats.approved / stats.total) * 100) },
@@ -957,11 +1022,10 @@
       `;
 
       els.matrixTableWrap.innerHTML = `<table>${header}${body}</table>`;
-
     }
 
     function recordMatchesFilters(record) {
-      return getFilteredRecords().some(item => item.id === record.id);
+      return !!record && getFilteredRecords().some(item => item.id === record.id);
     }
 
     function renderDetails() {
@@ -994,7 +1058,7 @@
       document.querySelectorAll("[data-field]").forEach(field => {
         field.addEventListener("change", handleFieldChange);
         if (field.tagName === "TEXTAREA" || field.type === "text") {
-          field.addEventListener("input", debounce(handleFieldChange, 350));
+          field.addEventListener("input", debounce(handleFieldChange, 600));
         }
       });
     }
@@ -1003,7 +1067,7 @@
       const category = getCategory(record.categoryId);
       const location = getLocation(record.locationId);
       return `
-        <article class="record-card">
+        <article class="record-card" id="record-card-${record.id}">
           <div class="record-head">
             <div>
               <div class="record-title">${escapeHtml(location.code)}</div>
@@ -1048,17 +1112,89 @@
       `;
     }
 
-    function handleFieldChange(event) {
+    function renderSubmittedView() {
+      const submittedRecords = getSubmittedRecords();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const pendingDays = submittedRecords.map(record => daysPending(record.submittedDate));
+      const over7 = pendingDays.filter(day => day > 7).length;
+      const maxPending = pendingDays.length ? Math.max(...pendingDays) : 0;
+
+      els.submittedSummary.innerHTML = `
+        <div class="submitted-metric"><span>Submitted pending</span><strong>${submittedRecords.length}</strong></div>
+        <div class="submitted-metric"><span>Pending over 7 days</span><strong>${over7}</strong></div>
+        <div class="submitted-metric"><span>Longest pending</span><strong>${maxPending} days</strong></div>
+      `;
+
+      if (!submittedRecords.length) {
+        els.submittedTableWrap.innerHTML = `<div class="empty-state">No submitted documents are currently pending approval.</div>`;
+        return;
+      }
+
+      const header = `
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th>Location</th>
+            <th>Revision</th>
+            <th>Submitted Date</th>
+            <th>Days Pending</th>
+            <th>Responsible</th>
+            <th>Remark</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+      `;
+
+      const body = `
+        <tbody>
+          ${submittedRecords.map(record => {
+            const category = getCategory(record.categoryId);
+            const location = getLocation(record.locationId);
+            const days = daysPending(record.submittedDate);
+            return `
+              <tr>
+                <td>${escapeHtml(category?.name || "-")}</td>
+                <td>
+                  <div class="location-code">${escapeHtml(location?.code || "-")}</div>
+                  ${location?.name ? `<div class="location-name">${escapeHtml(location.name)}</div>` : ""}
+                </td>
+                <td>${escapeHtml(record.revision || "-")}</td>
+                <td>${escapeHtml(record.submittedDate || "-")}</td>
+                <td><span class="pending-pill ${pendingClass(days)}">${days} days</span></td>
+                <td>${escapeHtml(record.responsible || "-")}</td>
+                <td>${escapeHtml(record.remark || "")}</td>
+                <td><button class="primary-btn" data-open-detail="${record.id}">Open Detail</button></td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      `;
+
+      els.submittedTableWrap.innerHTML = `<table>${header}${body}</table>`;
+
+      document.querySelectorAll("[data-open-detail]").forEach(button => {
+        button.addEventListener("click", () => openRecordInDetail(button.dataset.openDetail));
+      });
+    }
+
+    async function handleFieldChange(event) {
       const record = records.find(item => item.id === event.target.dataset.id);
       const field = event.target.dataset.field;
       if (!record || !field) return;
 
       record[field] = event.target.value;
       if (field === "status") autoDateByStatus(record);
-      saveData(true);
-      renderKpis();
-      renderCategoryCards();
+
+      await saveRecord(record);
+
       if (field === "status") renderAll(false);
+      else {
+        renderKpis();
+        renderCategoryCards();
+        renderMatrix();
+        renderSubmittedView();
+      }
     }
 
     function autoDateByStatus(record) {
@@ -1067,10 +1203,48 @@
       if (record.status === "Approved" && !record.approvedDate) record.approvedDate = today;
     }
 
+    async function saveRecord(record) {
+      if (isSaving) return;
+      isSaving = true;
+      try {
+        const payload = {
+          status: record.status,
+          revision: record.revision || "Rev.00",
+          responsible: record.responsible || "",
+          target_date: record.targetDate || null,
+          submitted_date: record.submittedDate || null,
+          approved_date: record.approvedDate || null,
+          remark: record.remark || ""
+        };
+
+        const { data, error } = await supabaseClient
+          .from("progress_records")
+          .update(payload)
+          .eq("id", record.id)
+          .select("updated_at")
+          .single();
+
+        if (error) throw error;
+
+        record.updatedAt = data?.updated_at || new Date().toISOString();
+        lastSaved = record.updatedAt;
+        updateLastSavedText();
+        setConnection("Supabase: Online", true);
+        showToast("Saved to Supabase");
+      } catch (error) {
+        console.error(error);
+        setConnection("Supabase: Save error", false);
+        showToast("Save failed. Check write policy/RLS.");
+      } finally {
+        isSaving = false;
+      }
+    }
+
     function renderAll(refreshDetails = true) {
       renderKpis();
       renderCategoryCards();
       renderMatrix();
+      renderSubmittedView();
       if (refreshDetails) renderDetails();
       else if (document.getElementById("detailView").classList.contains("active")) renderDetails();
       updateLastSavedText();
@@ -1084,42 +1258,35 @@
       });
     }
 
+    function openRecordInDetail(recordId) {
+      const record = records.find(item => item.id === recordId);
+      if (!record) return;
+
+      els.categoryFilter.value = record.categoryId;
+      els.statusFilter.value = "all";
+      els.quickFilter.value = "all";
+      els.searchInput.value = "";
+
+      switchView("detailView");
+      renderAll(true);
+
+      setTimeout(() => {
+        const card = document.getElementById(`record-card-${recordId}`);
+        if (!card) return;
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        card.classList.add("highlight");
+        const statusSelect = card.querySelector('[data-field="status"]');
+        if (statusSelect) statusSelect.focus();
+        setTimeout(() => card.classList.remove("highlight"), 2200);
+      }, 120);
+    }
+
     function clearFilters() {
       els.searchInput.value = "";
       els.categoryFilter.value = "all";
       els.statusFilter.value = "all";
       els.quickFilter.value = "all";
       renderAll();
-    }
-
-    function exportJson() {
-      const payload = {
-        app: "Progress Tracking Dashboard",
-        exportedAt: new Date().toISOString(),
-        categories,
-        locations,
-        statuses,
-        records
-      };
-      downloadFile("progress-tracking-dashboard.json", JSON.stringify(payload, null, 2), "application/json");
-      showToast("JSON exported");
-    }
-
-    function importJson(file) {
-      const reader = new FileReader();
-      reader.onload = event => {
-        try {
-          const parsed = JSON.parse(event.target.result);
-          const incomingRecords = Array.isArray(parsed.records) ? parsed.records : [];
-          records = mergeWithDefaultRecords(incomingRecords);
-          saveData(true);
-          renderAll();
-          showToast("JSON imported successfully");
-        } catch (error) {
-          showToast("Import failed. Please check JSON file.");
-        }
-      };
-      reader.readAsText(file);
     }
 
     function exportCsv() {
@@ -1133,57 +1300,31 @@
         "Target Date",
         "Submitted Date",
         "Approved Date",
-        "Remark"
+        "Remark",
+        "Updated At"
       ]];
 
       records.forEach(record => {
         const category = getCategory(record.categoryId);
         const location = getLocation(record.locationId);
         rows.push([
-          category.name,
-          location.code,
-          location.name,
+          category?.name || "",
+          location?.code || "",
+          location?.name || "",
           record.status,
           record.revision,
           record.responsible,
           record.targetDate,
           record.submittedDate,
           record.approvedDate,
-          record.remark
+          record.remark,
+          record.updatedAt
         ]);
       });
 
       const csv = rows.map(row => row.map(csvEscape).join(",")).join("\n");
-      downloadFile("progress-tracking-dashboard.csv", csv, "text/csv;charset=utf-8");
+      downloadFile("gfe-progress-tracking.csv", csv, "text/csv;charset=utf-8");
       showToast("CSV exported");
-    }
-
-    function markFilteredApproved() {
-      const filtered = getFilteredRecords();
-      if (!filtered.length) {
-        showToast("No filtered records to update");
-        return;
-      }
-
-      const confirmed = confirm(`Mark ${filtered.length} filtered records as Approved?`);
-      if (!confirmed) return;
-
-      filtered.forEach(record => {
-        record.status = "Approved";
-        autoDateByStatus(record);
-      });
-      saveData(true);
-      renderAll();
-      showToast("Filtered records marked as Approved");
-    }
-
-    function resetData() {
-      const confirmed = confirm("Reset all progress data to default? This cannot be undone unless you have exported a backup JSON.");
-      if (!confirmed) return;
-      records = createDefaultRecords();
-      saveData(true);
-      renderAll();
-      showToast("Dashboard reset");
     }
 
     function downloadFile(filename, content, mimeType) {
@@ -1196,6 +1337,35 @@
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+    }
+
+    function daysPending(submittedDate) {
+      if (!submittedDate) return 0;
+      const submitted = new Date(submittedDate);
+      if (Number.isNaN(submitted.getTime())) return 0;
+      submitted.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return Math.max(0, Math.round((today - submitted) / (1000 * 60 * 60 * 24)));
+    }
+
+    function pendingClass(days) {
+      if (days > 14) return "pending-delay";
+      if (days > 7) return "pending-watch";
+      return "pending-ok";
+    }
+
+    function formatDateTime(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "-";
+      return date.toLocaleString("en-GB", {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
     }
 
     function csvEscape(value) {
@@ -1247,32 +1417,7 @@
       showToast.timeout = setTimeout(() => els.toast.classList.remove("show"), 2200);
     }
 
-    document.querySelectorAll(".tab-btn").forEach(button => {
-      button.addEventListener("click", () => switchView(button.dataset.view));
-    });
-
-    [els.searchInput, els.categoryFilter, els.statusFilter, els.quickFilter].forEach(control => {
-      control.addEventListener("input", () => renderAll());
-      control.addEventListener("change", () => renderAll());
-    });
-
-    els.saveBtn.addEventListener("click", () => saveData());
-    els.exportJsonBtn.addEventListener("click", exportJson);
-    els.exportCsvBtn.addEventListener("click", exportCsv);
-    els.resetBtn.addEventListener("click", resetData);
-    els.clearFiltersBtn.addEventListener("click", clearFilters);
-    if (els.markFilteredApprovedBtn) {
-      els.markFilteredApprovedBtn.addEventListener("click", markFilteredApproved);
-    }
-    els.importJsonInput.addEventListener("change", event => {
-      const file = event.target.files[0];
-      if (file) importJson(file);
-      event.target.value = "";
-    });
-
-    populateFilters();
-    loadData();
-    renderAll();
+    initApp();
   </script>
 </body>
 </html>
