@@ -92,6 +92,18 @@
       border-color: #bbf7d0;
     }
 
+    .viewer-pill {
+      background: #f8fafc;
+      color: #475569;
+      border-color: var(--line);
+    }
+
+    .admin-pill {
+      background: #fef3c7;
+      color: #92400e;
+      border-color: #fde68a;
+    }
+
     button,
     .button-label {
       border: 1px solid var(--line);
@@ -576,9 +588,10 @@
         <p>Instrumentation in D-wall Drawing / AAA Report / Stage Assessment / Pile Impact</p>
       </div>
       <div class="actions">
-        <div class="save-info online-pill" id="connectionText">Supabase: Connecting...</div>
+        <button class="save-info viewer-pill" id="connectionText" type="button">Viewer: Click for Admin</button>
         <div class="save-info" id="lastSavedTopText">Last saved: -</div>
         <button class="primary-btn" id="refreshBtn">Refresh</button>
+        <button class="primary-btn" id="migrateLocalBtn" hidden>Upload old local data</button>
         <button id="exportCsvBtn">Export CSV</button>
       </div>
     </section>
@@ -668,6 +681,8 @@
   <script>
     const SUPABASE_URL = "https://quzlpwfomatazvidqacs.supabase.co";
     const SUPABASE_KEY = "sb_publishable_JBBQ2uXJhc1GfWR24Q9jSA_xQqiIYad";
+    const ADMIN_PIN = "1234";
+    const OLD_LOCAL_STORAGE_KEY = "progressTrackingDashboardData_v1";
 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -685,6 +700,7 @@
     let records = [];
     let lastSaved = null;
     let isSaving = false;
+    let adminUnlocked = sessionStorage.getItem("gfe_progress_admin_unlocked") === "true";
 
     const els = {
       kpiGrid: document.getElementById("kpiGrid"),
@@ -699,6 +715,7 @@
       quickFilter: document.getElementById("quickFilter"),
       refreshBtn: document.getElementById("refreshBtn"),
       refreshSubmittedBtn: document.getElementById("refreshSubmittedBtn"),
+      migrateLocalBtn: document.getElementById("migrateLocalBtn"),
       exportCsvBtn: document.getElementById("exportCsvBtn"),
       clearFiltersBtn: document.getElementById("clearFiltersBtn"),
       lastSavedText: document.getElementById("lastSavedText"),
@@ -736,6 +753,8 @@
         showToast("Submitted View refreshed");
       });
 
+      els.connectionText.addEventListener("click", toggleAdminMode);
+      els.migrateLocalBtn.addEventListener("click", uploadOldLocalDataToSupabase);
       els.exportCsvBtn.addEventListener("click", exportCsv);
       els.clearFiltersBtn.addEventListener("click", clearFilters);
     }
@@ -776,6 +795,8 @@
           id: row.id,
           categoryId: row.category_id,
           locationId: row.location_id,
+          categoryKey: row.categories?.category_key || "",
+          locationKey: row.locations?.location_key || "",
           status: row.status || "Not Started",
           revision: row.revision || "Rev.00",
           responsible: row.responsible || "",
@@ -789,6 +810,7 @@
 
         updateLastSavedFromRecords();
         populateCategoryFilter();
+        updateMigrationButton();
         setConnection("Supabase: Online", true);
       } catch (error) {
         console.error(error);
@@ -798,8 +820,45 @@
     }
 
     function setConnection(text, ok) {
-      els.connectionText.textContent = text;
-      els.connectionText.classList.toggle("online-pill", ok);
+      if (adminUnlocked) {
+        els.connectionText.textContent = "Admin: Edit enabled";
+        els.connectionText.className = "save-info admin-pill";
+      } else if (ok) {
+        els.connectionText.textContent = "Viewer: Click for Admin";
+        els.connectionText.className = "save-info viewer-pill";
+      } else {
+        els.connectionText.textContent = text || "Supabase: Error";
+        els.connectionText.className = "save-info";
+      }
+    }
+
+    function toggleAdminMode() {
+      if (adminUnlocked) {
+        const confirmed = confirm("ออกจาก Admin mode?");
+        if (!confirmed) return;
+        adminUnlocked = false;
+        sessionStorage.removeItem("gfe_progress_admin_unlocked");
+        setConnection("Supabase: Online", true);
+        renderAll(true);
+        showToast("Viewer mode");
+        return;
+      }
+
+      const pin = prompt("กรุณาใส่รหัส Admin");
+      if (pin === ADMIN_PIN) {
+        adminUnlocked = true;
+        sessionStorage.setItem("gfe_progress_admin_unlocked", "true");
+        setConnection("Supabase: Online", true);
+        renderAll(true);
+        showToast("Admin mode enabled");
+      } else if (pin !== null) {
+        showToast("รหัสไม่ถูกต้อง");
+      }
+    }
+
+    function updateMigrationButton() {
+      const oldRaw = localStorage.getItem(OLD_LOCAL_STORAGE_KEY);
+      els.migrateLocalBtn.hidden = !oldRaw;
     }
 
     function populateStaticFilters() {
@@ -1066,6 +1125,7 @@
     function renderRecordCard(record) {
       const category = getCategory(record.categoryId);
       const location = getLocation(record.locationId);
+      const disabledAttr = adminUnlocked ? "" : "disabled";
       return `
         <article class="record-card" id="record-card-${record.id}">
           <div class="record-head">
@@ -1079,33 +1139,33 @@
           <div class="form-grid">
             <div class="field">
               <label>Status</label>
-              <select data-field="status" data-id="${record.id}">
+              <select data-field="status" data-id="${record.id}" ${disabledAttr}>
                 ${statuses.map(status => `<option value="${escapeHtml(status.name)}" ${record.status === status.name ? "selected" : ""}>${escapeHtml(status.name)}</option>`).join("")}
               </select>
             </div>
             <div class="field">
               <label>Revision</label>
-              <input data-field="revision" data-id="${record.id}" type="text" value="${escapeAttribute(record.revision)}" placeholder="Rev.00" />
+              <input data-field="revision" data-id="${record.id}" type="text" ${disabledAttr} value="${escapeAttribute(record.revision)}" placeholder="Rev.00" />
             </div>
             <div class="field">
               <label>Responsible</label>
-              <input data-field="responsible" data-id="${record.id}" type="text" value="${escapeAttribute(record.responsible)}" placeholder="Name / Team" />
+              <input data-field="responsible" data-id="${record.id}" type="text" ${disabledAttr} value="${escapeAttribute(record.responsible)}" placeholder="Name / Team" />
             </div>
             <div class="field">
               <label>Target Date</label>
-              <input data-field="targetDate" data-id="${record.id}" type="date" value="${escapeAttribute(record.targetDate)}" />
+              <input data-field="targetDate" data-id="${record.id}" type="date" ${disabledAttr} value="${escapeAttribute(record.targetDate)}" />
             </div>
             <div class="field">
               <label>Submitted Date</label>
-              <input data-field="submittedDate" data-id="${record.id}" type="date" value="${escapeAttribute(record.submittedDate)}" />
+              <input data-field="submittedDate" data-id="${record.id}" type="date" ${disabledAttr} value="${escapeAttribute(record.submittedDate)}" />
             </div>
             <div class="field">
               <label>Approved Date</label>
-              <input data-field="approvedDate" data-id="${record.id}" type="date" value="${escapeAttribute(record.approvedDate)}" />
+              <input data-field="approvedDate" data-id="${record.id}" type="date" ${disabledAttr} value="${escapeAttribute(record.approvedDate)}" />
             </div>
             <div class="field full-width">
               <label>Remark</label>
-              <textarea data-field="remark" data-id="${record.id}" placeholder="Add comment / pending issue / reviewer note...">${escapeHtml(record.remark)}</textarea>
+              <textarea data-field="remark" data-id="${record.id}" ${disabledAttr} placeholder="Add comment / pending issue / reviewer note...">${escapeHtml(record.remark)}</textarea>
             </div>
           </div>
         </article>
@@ -1204,6 +1264,11 @@
     }
 
     async function saveRecord(record) {
+      if (!adminUnlocked) {
+        showToast("Please unlock Admin mode before editing.");
+        renderAll(false);
+        return;
+      }
       if (isSaving) return;
       isSaving = true;
       try {
@@ -1287,6 +1352,83 @@
       els.statusFilter.value = "all";
       els.quickFilter.value = "all";
       renderAll();
+    }
+
+    async function uploadOldLocalDataToSupabase() {
+      if (!adminUnlocked) {
+        const pin = prompt("กรุณาใส่รหัส Admin ก่อน upload ข้อมูลเดิม");
+        if (pin !== ADMIN_PIN) {
+          if (pin !== null) showToast("รหัสไม่ถูกต้อง");
+          return;
+        }
+        adminUnlocked = true;
+        sessionStorage.setItem("gfe_progress_admin_unlocked", "true");
+        setConnection("Supabase: Online", true);
+      }
+
+      const oldRaw = localStorage.getItem(OLD_LOCAL_STORAGE_KEY);
+      if (!oldRaw) {
+        showToast("ไม่พบข้อมูล localStorage เดิมบน browser นี้");
+        return;
+      }
+
+      let oldData;
+      try {
+        oldData = JSON.parse(oldRaw);
+      } catch (error) {
+        showToast("อ่านข้อมูลเดิมไม่สำเร็จ");
+        return;
+      }
+
+      const oldRecords = Array.isArray(oldData.records) ? oldData.records : [];
+      if (!oldRecords.length) {
+        showToast("ไม่พบรายการ records ในข้อมูลเดิม");
+        return;
+      }
+
+      const confirmed = confirm(`พบข้อมูลเดิม ${oldRecords.length} รายการ ต้องการ upload ขึ้น Supabase และทับข้อมูลออนไลน์ที่ตรงกันหรือไม่?`);
+      if (!confirmed) return;
+
+      let updated = 0;
+      let skipped = 0;
+
+      for (const oldRecord of oldRecords) {
+        const onlineRecord = records.find(record =>
+          record.categoryKey === oldRecord.categoryId &&
+          record.locationKey === oldRecord.locationId
+        );
+
+        if (!onlineRecord) {
+          skipped += 1;
+          continue;
+        }
+
+        const payload = {
+          status: oldRecord.status || "Not Started",
+          revision: oldRecord.revision || "Rev.00",
+          responsible: oldRecord.responsible || "",
+          target_date: oldRecord.targetDate || null,
+          submitted_date: oldRecord.submittedDate || null,
+          approved_date: oldRecord.approvedDate || null,
+          remark: oldRecord.remark || ""
+        };
+
+        const { error } = await supabaseClient
+          .from("progress_records")
+          .update(payload)
+          .eq("id", onlineRecord.id);
+
+        if (error) {
+          console.error(error);
+          skipped += 1;
+        } else {
+          updated += 1;
+        }
+      }
+
+      await loadFromSupabase();
+      renderAll(true);
+      showToast(`Uploaded old data: ${updated} updated, ${skipped} skipped`);
     }
 
     function exportCsv() {
