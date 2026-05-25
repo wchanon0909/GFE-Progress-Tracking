@@ -391,6 +391,33 @@
       margin-top: 3px;
     }
 
+    .submission-no {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      margin-top: 6px;
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.01em;
+    }
+
+    .matrix-cell-content {
+      display: grid;
+      gap: 7px;
+      min-width: 178px;
+    }
+
+    .matrix-submission-no {
+      color: #3730a3;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.01em;
+    }
+
     .status-pill,
     .pending-pill {
       display: inline-flex;
@@ -792,6 +819,8 @@
           locationId: row.location_id,
           categoryKey: row.categories?.category_key || "",
           locationKey: row.locations?.location_key || "",
+          submissionNo: row.submission_no || "",
+          documentTitle: row.document_title || "",
           status: row.status || "Not Started",
           revision: row.revision || "Rev.00",
           responsible: row.responsible || "",
@@ -914,7 +943,7 @@
         const location = getLocation(record.locationId);
         if (!category || !location) return false;
 
-        const searchable = `${category.name} ${location.code} ${location.name} ${record.revision} ${record.responsible} ${record.remark}`.toLowerCase();
+        const searchable = `${category.name} ${location.code} ${location.name} ${record.submissionNo} ${record.documentTitle} ${record.revision} ${record.responsible} ${record.remark}`.toLowerCase();
 
         if (search && !searchable.includes(search)) return false;
         if (categoryFilter !== "all" && record.categoryId !== categoryFilter) return false;
@@ -1057,9 +1086,12 @@
                   if (!recordMatchesFilters(record)) return `<td style="color: var(--muted);">-</td>`;
                   return `
                     <td>
-                      <div class="matrix-status-bar ${statusClass(record.status)}">
-                        <span>${escapeHtml(record.status)}</span>
-                        <span class="matrix-status-score">${statusWeight(record.status)}%</span>
+                      <div class="matrix-cell-content">
+                        ${record.submissionNo ? `<div class="matrix-submission-no">${escapeHtml(record.submissionNo)}</div>` : ""}
+                        <div class="matrix-status-bar ${statusClass(record.status)}">
+                          <span>${escapeHtml(record.status)}</span>
+                          <span class="matrix-status-score">${statusWeight(record.status)}%</span>
+                        </div>
                       </div>
                     </td>
                   `;
@@ -1123,6 +1155,8 @@
               <div class="record-title">${escapeHtml(location.code)}</div>
               ${location.name ? `<div class="record-subtitle">${escapeHtml(location.name)}</div>` : ""}
               <div class="record-subtitle">${escapeHtml(category.name)}</div>
+              ${record.submissionNo ? `<div class="submission-no">${escapeHtml(record.submissionNo)}</div>` : ""}
+              ${record.documentTitle ? `<div class="record-subtitle">${escapeHtml(record.documentTitle)}</div>` : ""}
             </div>
             <span class="status-pill ${statusClass(record.status)}">${escapeHtml(record.status)}</span>
           </div>
@@ -1184,6 +1218,7 @@
       const header = `
         <thead>
           <tr>
+            <th>Submission No.</th>
             <th>Category</th>
             <th>Location</th>
             <th>Revision</th>
@@ -1204,6 +1239,7 @@
             const days = daysPending(record.submittedDate);
             return `
               <tr>
+                <td><span class="submission-no">${escapeHtml(record.submissionNo || "-")}</span></td>
                 <td>${escapeHtml(category?.name || "-")}</td>
                 <td>
                   <div class="location-code">${escapeHtml(location?.code || "-")}</div>
