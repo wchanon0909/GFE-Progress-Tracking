@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GFE Progress Tracking Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root {
       --bg: #f5f7fb;
@@ -24,6 +25,8 @@
       --internal-review-text: #92400e;
       --submitted-bg: #dcfce7;
       --submitted-text: #166534;
+      --resubmitted-bg: #ede9fe;
+      --resubmitted-text: #6d28d9;
       --approved-bg: #bbf7d0;
       --approved-text: #14532d;
       --on-hold-bg: #fee2e2;
@@ -434,6 +437,7 @@
     .status-In-Progress { background: var(--in-progress-bg); color: var(--in-progress-text); }
     .status-Internal-Review { background: var(--internal-review-bg); color: var(--internal-review-text); }
     .status-Submitted { background: var(--submitted-bg); color: var(--submitted-text); }
+    .status-Re-Submitted { background: var(--resubmitted-bg); color: var(--resubmitted-text); }
     .status-Approved { background: var(--approved-bg); color: var(--approved-text); }
     .status-On-Hold { background: var(--on-hold-bg); color: var(--on-hold-text); }
 
@@ -555,6 +559,136 @@
     .pending-watch { background: #fef3c7; color: #92400e; }
     .pending-delay { background: #fee2e2; color: #b91c1c; }
 
+
+    .import-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 1500;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.38);
+      padding: 18px;
+    }
+
+    .import-modal-backdrop.show {
+      display: flex;
+    }
+
+    .import-modal {
+      width: min(1180px, 100%);
+      max-height: min(86vh, 780px);
+      overflow: hidden;
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+    }
+
+    .import-modal-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .import-modal-header h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .import-modal-header p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .import-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfdff;
+      align-items: center;
+    }
+
+    .import-controls input[type="file"] {
+      max-width: 360px;
+      padding: 8px 10px;
+      border-radius: 999px;
+    }
+
+    .import-preview-wrap {
+      overflow: auto;
+    }
+
+    .import-summary {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .import-metric {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+      background: #f8fafc;
+    }
+
+    .import-metric span {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .import-metric strong {
+      font-size: 20px;
+    }
+
+    .import-modal-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 18px;
+      border-top: 1px solid var(--line);
+      background: #fbfdff;
+    }
+
+    .action-chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 11px;
+      font-weight: 900;
+      background: #f1f5f9;
+      color: #475569;
+      white-space: nowrap;
+      margin: 2px 3px 2px 0;
+    }
+
+    .action-update { background: #dbeafe; color: #1d4ed8; }
+    .action-approved { background: #dcfce7; color: #166534; }
+    .action-resubmitted { background: #ede9fe; color: #6d28d9; }
+    .action-skip { background: #f3f4f6; color: #6b7280; }
+    .action-unmatched { background: #fee2e2; color: #b91c1c; }
+
+    @media (max-width: 760px) {
+      .import-modal-backdrop { padding: 8px; }
+      .import-modal { max-height: 92vh; border-radius: 18px; }
+      .import-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .import-modal-footer { flex-direction: column; }
+    }
+
     .toast {
       position: fixed;
       right: 22px;
@@ -618,6 +752,8 @@
         <button class="save-info viewer-pill" id="connectionText" type="button">Viewer: Click for Admin</button>
         <div class="save-info" id="lastSavedTopText">Last saved: -</div>
         <button class="primary-btn" id="refreshBtn">Refresh</button>
+        <button class="primary-btn" id="importExcelBtn" hidden>Import Weekly Excel</button>
+        <input id="weeklyExcelInput" type="file" accept=".xlsx,.xls" hidden />
 
       </div>
     </section>
@@ -690,7 +826,7 @@
         <div class="panel-header">
           <div>
             <h2>Submitted View</h2>
-            <p>Weekly follow-up list for documents currently submitted and pending approval.</p>
+            <p>Weekly follow-up list for documents currently Submitted / Re-Submitted and pending approval.</p>
           </div>
           <button id="refreshSubmittedBtn">Refresh</button>
         </div>
@@ -701,6 +837,35 @@
 
     <div class="footer-note">Database updated: <span id="lastSavedText">-</span></div>
   </main>
+
+
+  <div class="import-modal-backdrop" id="importModal">
+    <div class="import-modal">
+      <div class="import-modal-header">
+        <div>
+          <h2>Import Weekly Excel</h2>
+          <p>Read AP/AQ/AV/AW/AX/AY from the weekly submission register, preview changes, then update Supabase.</p>
+        </div>
+        <button id="closeImportModalBtn" type="button">Close</button>
+      </div>
+      <div class="import-controls">
+        <input id="weeklyExcelModalInput" type="file" accept=".xlsx,.xls" />
+        <button class="primary-btn" id="parseExcelBtn" type="button">Preview Import</button>
+        <span class="readonly-note">Match by Submission No.</span>
+      </div>
+      <div class="import-summary" id="importSummary"></div>
+      <div class="import-preview-wrap" id="importPreviewWrap">
+        <div class="empty-state">Select a weekly Excel file, then click Preview Import.</div>
+      </div>
+      <div class="import-modal-footer">
+        <div class="readonly-note" id="importStatusText">No file parsed yet.</div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button id="cancelImportBtn" type="button">Cancel</button>
+          <button class="primary-btn" id="confirmImportBtn" type="button" disabled>Confirm Import to Supabase</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="toast" id="toast"></div>
 
@@ -716,6 +881,7 @@
       { name: "In Progress", weight: 40 },
       { name: "Internal Review", weight: 60 },
       { name: "Submitted", weight: 80 },
+      { name: "Re-Submitted", weight: 85 },
       { name: "Approved", weight: 100 },
       { name: "On Hold", weight: 20 }
     ];
@@ -726,6 +892,8 @@
     let lastSaved = null;
     let isSaving = false;
     let adminUnlocked = sessionStorage.getItem("gfe_progress_admin_unlocked") === "true";
+    let pendingImportRows = [];
+    let pendingImportFileName = "";
 
     const els = {
       kpiGrid: document.getElementById("kpiGrid"),
@@ -739,6 +907,17 @@
       statusFilter: document.getElementById("statusFilter"),
       quickFilter: document.getElementById("quickFilter"),
       refreshBtn: document.getElementById("refreshBtn"),
+      importExcelBtn: document.getElementById("importExcelBtn"),
+      weeklyExcelInput: document.getElementById("weeklyExcelInput"),
+      importModal: document.getElementById("importModal"),
+      closeImportModalBtn: document.getElementById("closeImportModalBtn"),
+      weeklyExcelModalInput: document.getElementById("weeklyExcelModalInput"),
+      parseExcelBtn: document.getElementById("parseExcelBtn"),
+      importSummary: document.getElementById("importSummary"),
+      importPreviewWrap: document.getElementById("importPreviewWrap"),
+      importStatusText: document.getElementById("importStatusText"),
+      cancelImportBtn: document.getElementById("cancelImportBtn"),
+      confirmImportBtn: document.getElementById("confirmImportBtn"),
       refreshSubmittedBtn: document.getElementById("refreshSubmittedBtn"),
 
       clearFiltersBtn: document.getElementById("clearFiltersBtn"),
@@ -778,6 +957,11 @@
       });
 
       els.connectionText.addEventListener("click", toggleAdminMode);
+      els.importExcelBtn.addEventListener("click", openImportModal);
+      els.closeImportModalBtn.addEventListener("click", closeImportModal);
+      els.cancelImportBtn.addEventListener("click", closeImportModal);
+      els.parseExcelBtn.addEventListener("click", parseWeeklyExcelFromModal);
+      els.confirmImportBtn.addEventListener("click", confirmWeeklyImport);
       els.clearFiltersBtn.addEventListener("click", clearFilters);
     }
 
@@ -828,6 +1012,11 @@
           submittedDate: row.submitted_date || "",
           approvedDate: row.approved_date || "",
           remark: row.remark || "",
+          latestReplyRev: row.latest_reply_rev || "",
+          latestReplyRefNo: row.latest_reply_ref_no || "",
+          latestReplyDate: row.latest_reply_date || "",
+          latestReplyResponse: row.latest_reply_response || "",
+          lastExcelImportedAt: row.last_excel_imported_at || "",
           createdAt: row.created_at || "",
           updatedAt: row.updated_at || ""
         }));
@@ -853,6 +1042,11 @@
         els.connectionText.textContent = text || "Supabase: Error";
         els.connectionText.className = "save-info";
       }
+      updateAdminUi();
+    }
+
+    function updateAdminUi() {
+      if (els.importExcelBtn) els.importExcelBtn.hidden = !adminUnlocked;
     }
 
     function toggleAdminMode() {
@@ -864,6 +1058,7 @@
         setConnection("Supabase: Online", true);
         renderAll(true);
         showToast("Viewer mode");
+        updateAdminUi();
         return;
       }
 
@@ -874,6 +1069,7 @@
         setConnection("Supabase: Online", true);
         renderAll(true);
         showToast("Admin mode enabled");
+        updateAdminUi();
       } else if (pin !== null) {
         showToast("รหัสไม่ถูกต้อง");
       }
@@ -943,7 +1139,7 @@
         const location = getLocation(record.locationId);
         if (!category || !location) return false;
 
-        const searchable = `${category.name} ${location.code} ${location.name} ${record.submissionNo} ${record.documentTitle} ${record.revision} ${record.responsible} ${record.remark}`.toLowerCase();
+        const searchable = `${category.name} ${location.code} ${location.name} ${record.submissionNo} ${record.documentTitle} ${record.revision} ${record.responsible} ${record.latestReplyRev} ${record.latestReplyRefNo} ${record.latestReplyResponse} ${record.remark}`.toLowerCase();
 
         if (search && !searchable.includes(search)) return false;
         if (categoryFilter !== "all" && record.categoryId !== categoryFilter) return false;
@@ -964,7 +1160,7 @@
 
     function getSubmittedRecords() {
       return records
-        .filter(record => record.status === "Submitted")
+        .filter(record => ["Submitted", "Re-Submitted"].includes(record.status))
         .sort((a, b) => {
           const dateA = a.submittedDate || "9999-12-31";
           const dateB = b.submittedDate || "9999-12-31";
@@ -1205,7 +1401,7 @@
       const maxPending = pendingDays.length ? Math.max(...pendingDays) : 0;
 
       els.submittedSummary.innerHTML = `
-        <div class="submitted-metric"><span>Submitted pending</span><strong>${submittedRecords.length}</strong></div>
+        <div class="submitted-metric"><span>Pending approval</span><strong>${submittedRecords.length}</strong></div>
         <div class="submitted-metric"><span>Pending over 7 days</span><strong>${over7}</strong></div>
         <div class="submitted-metric"><span>Longest pending</span><strong>${maxPending} days</strong></div>
       `;
@@ -1221,6 +1417,7 @@
             <th>Submission No.</th>
             <th>Category</th>
             <th>Location</th>
+            <th>Status</th>
             <th>Revision</th>
             <th>Submitted Date</th>
             <th>Days Pending</th>
@@ -1245,6 +1442,7 @@
                   <div class="location-code">${escapeHtml(location?.code || "-")}</div>
                   ${location?.name ? `<div class="location-name">${escapeHtml(location.name)}</div>` : ""}
                 </td>
+                <td><span class="status-pill ${statusClass(record.status)}">${escapeHtml(record.status)}</span></td>
                 <td>${escapeHtml(record.revision || "-")}</td>
                 <td>${escapeHtml(record.submittedDate || "-")}</td>
                 <td><span class="pending-pill ${pendingClass(days)}">${days} days</span></td>
@@ -1380,6 +1578,342 @@
       renderAll();
     }
 
+    function openImportModal() {
+      if (!adminUnlocked) {
+        showToast("Please unlock Admin mode first.");
+        return;
+      }
+      pendingImportRows = [];
+      pendingImportFileName = "";
+      els.weeklyExcelModalInput.value = "";
+      els.importSummary.innerHTML = "";
+      els.importPreviewWrap.innerHTML = `<div class="empty-state">Select a weekly Excel file, then click Preview Import.</div>`;
+      els.importStatusText.textContent = "No file parsed yet.";
+      els.confirmImportBtn.disabled = true;
+      els.importModal.classList.add("show");
+    }
+
+    function closeImportModal() {
+      els.importModal.classList.remove("show");
+    }
+
+    async function parseWeeklyExcelFromModal() {
+      const file = els.weeklyExcelModalInput.files && els.weeklyExcelModalInput.files[0];
+      if (!file) {
+        showToast("Please select an Excel file first.");
+        return;
+      }
+      pendingImportFileName = file.name;
+      try {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+        pendingImportRows = buildWeeklyImportPreview(rows, file.name);
+        renderImportPreview(pendingImportRows);
+        els.confirmImportBtn.disabled = !pendingImportRows.some(row => row.matched && row.actions.length);
+        els.importStatusText.textContent = `Parsed ${file.name} · ${pendingImportRows.length} relevant rows`;
+      } catch (error) {
+        console.error(error);
+        showToast("Cannot read Excel file. Please check file format.");
+      }
+    }
+
+    function buildWeeklyImportPreview(rows, fileName) {
+      const preview = [];
+      const seenSubmission = new Set();
+      rows.forEach((row, index) => {
+        const submissionNo = findSubmissionNoInRow(row);
+        if (!submissionNo) return;
+        if (seenSubmission.has(`${submissionNo}-${index}`)) return;
+        const record = records.find(item => normalizeSubmissionNo(item.submissionNo) === normalizeSubmissionNo(submissionNo));
+
+        const excelData = {
+          rowNumber: index + 1,
+          submissionNo,
+          submittedDate: excelDateToIso(row[41]),
+          weeklyRemark: cleanCell(row[42]),
+          latestReplyRev: cleanCell(row[47]),
+          latestReplyRefNo: cleanCell(row[48]),
+          latestReplyDate: excelDateToIso(row[49]),
+          latestReplyResponse: cleanCell(row[50]),
+          fileName
+        };
+
+        if (!record) {
+          preview.push({
+            ...excelData,
+            matched: false,
+            record: null,
+            currentStatus: "-",
+            suggestedStatus: "Unmatched",
+            actions: ["Unmatched"]
+          });
+          return;
+        }
+
+        const suggestion = suggestImportActions(record, excelData);
+        preview.push({
+          ...excelData,
+          matched: true,
+          record,
+          currentStatus: record.status,
+          suggestedStatus: suggestion.status,
+          actions: suggestion.actions,
+          remarkBlock: suggestion.remarkBlock,
+          updatePayload: suggestion.payload
+        });
+      });
+      return preview;
+    }
+
+    function findSubmissionNoInRow(row) {
+      for (const cell of row) {
+        const text = cleanCell(cell);
+        const match = text.match(/CIV-\d{5,6}-(?:\d{2}|[A-Z]\d|[A-Z]{2}|7A|TU)/i);
+        if (match) return match[0].toUpperCase();
+      }
+      return "";
+    }
+
+    function cleanCell(value) {
+      if (value === null || value === undefined) return "";
+      if (value instanceof Date) return value.toISOString().slice(0, 10);
+      return String(value).trim();
+    }
+
+    function excelDateToIso(value) {
+      if (!value) return "";
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.toISOString().slice(0, 10);
+      }
+      if (typeof value === "number") {
+        const parsed = XLSX.SSF.parse_date_code(value);
+        if (!parsed) return "";
+        const y = parsed.y;
+        const m = String(parsed.m).padStart(2, "0");
+        const d = String(parsed.d).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+      const text = String(value).trim();
+      if (!text) return "";
+      const direct = new Date(text);
+      if (!Number.isNaN(direct.getTime())) return direct.toISOString().slice(0, 10);
+      const m = text.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+      if (m) {
+        let year = Number(m[3]);
+        if (year < 100) year += 2000;
+        if (year > 2400) year -= 543;
+        return `${year}-${String(Number(m[2])).padStart(2, "0")}-${String(Number(m[1])).padStart(2, "0")}`;
+      }
+      return "";
+    }
+
+    function normalizeSubmissionNo(value) {
+      return String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+    }
+
+    function suggestImportActions(record, excelData) {
+      const actions = [];
+      const payload = {};
+      let suggestedStatus = record.status;
+
+      const submittedIsNewer = excelData.submittedDate && (!record.submittedDate || excelData.submittedDate > record.submittedDate);
+      const approvedDate = record.approvedDate || "";
+      const isAfterApproval = excelData.submittedDate && approvedDate && excelData.submittedDate > approvedDate;
+
+      if (submittedIsNewer) {
+        payload.submitted_date = excelData.submittedDate;
+        if (isAfterApproval || record.status === "Approved") {
+          suggestedStatus = "Re-Submitted";
+          actions.push("Change to Re-Submitted");
+        } else if (!["Approved", "Re-Submitted"].includes(record.status)) {
+          suggestedStatus = "Submitted";
+          actions.push("Change to Submitted");
+        } else {
+          actions.push("Update submitted date");
+        }
+      }
+
+      const replyIsNewer = excelData.latestReplyDate && (!record.latestReplyDate || excelData.latestReplyDate > record.latestReplyDate);
+      const hasReplyData = excelData.latestReplyRev || excelData.latestReplyRefNo || excelData.latestReplyDate || excelData.latestReplyResponse;
+
+      if (replyIsNewer || (hasReplyData && !record.latestReplyResponse)) {
+        payload.latest_reply_rev = excelData.latestReplyRev || "";
+        payload.latest_reply_ref_no = excelData.latestReplyRefNo || "";
+        payload.latest_reply_date = excelData.latestReplyDate || null;
+        payload.latest_reply_response = excelData.latestReplyResponse || "";
+        actions.push("Update latest reply");
+      }
+
+      if (isApprovedResponse(excelData.latestReplyResponse)) {
+        suggestedStatus = "Approved";
+        payload.approved_date = excelData.latestReplyDate || record.approvedDate || new Date().toISOString().slice(0, 10);
+        actions.push("Change to Approved");
+      }
+
+      if (suggestedStatus !== record.status) {
+        payload.status = suggestedStatus;
+      }
+
+      const remarkBlock = buildImportRemarkBlock(record, excelData, suggestedStatus);
+      if (remarkBlock && !isDuplicateRemark(record.remark, remarkBlock)) {
+        payload.remark = record.remark ? `${record.remark}\n\n${remarkBlock}` : remarkBlock;
+        actions.push("Append remark");
+      }
+
+      payload.last_excel_imported_at = new Date().toISOString();
+
+      if (!actions.length) {
+        actions.push("Skip duplicate/no new data");
+      }
+
+      return { status: suggestedStatus, actions, payload, remarkBlock };
+    }
+
+    function isApprovedResponse(text) {
+      const value = String(text || "").toLowerCase();
+      if (!value) return false;
+      return value.includes("approved") || value.includes("no comment") || value.includes("accepted");
+    }
+
+    function buildImportRemarkBlock(record, excelData, suggestedStatus) {
+      const lines = [];
+      const dateLabel = new Date().toISOString().slice(0, 10);
+      lines.push(`[Weekly Excel Import: ${dateLabel}]`);
+      lines.push(`File: ${excelData.fileName}`);
+      if (excelData.submittedDate) lines.push(`Submitted Date: ${excelData.submittedDate}`);
+      if (record.status === "Approved" && suggestedStatus === "Re-Submitted") {
+        lines.push(`Re-submitted after previous approval.`);
+        if (record.approvedDate) lines.push(`Previous Approved Date: ${record.approvedDate}`);
+      }
+      if (excelData.weeklyRemark) lines.push(`Submission remark: ${excelData.weeklyRemark}`);
+      if (excelData.latestReplyRev || excelData.latestReplyRefNo || excelData.latestReplyDate || excelData.latestReplyResponse) {
+        lines.push(`Latest reply:`);
+        if (excelData.latestReplyRev) lines.push(`- Rev: ${excelData.latestReplyRev}`);
+        if (excelData.latestReplyRefNo) lines.push(`- Ref: ${excelData.latestReplyRefNo}`);
+        if (excelData.latestReplyDate) lines.push(`- Reply date: ${excelData.latestReplyDate}`);
+        if (excelData.latestReplyResponse) lines.push(`- Response: ${excelData.latestReplyResponse}`);
+      }
+      return lines.length > 2 ? lines.join("\n") : "";
+    }
+
+    function isDuplicateRemark(existingRemark, block) {
+      if (!block) return true;
+      const sig = block.split("\n").filter(line =>
+        line.startsWith("- Rev:") ||
+        line.startsWith("- Ref:") ||
+        line.startsWith("- Reply date:") ||
+        line.startsWith("- Response:") ||
+        line.startsWith("Submitted Date:")
+      ).join("|");
+      if (!sig) return existingRemark.includes(block);
+      return existingRemark.includes(sig.split("|").slice(0, 3).join("\n")) || existingRemark.includes(block);
+    }
+
+    function renderImportPreview(rows) {
+      const matched = rows.filter(row => row.matched).length;
+      const unmatched = rows.filter(row => !row.matched).length;
+      const willUpdate = rows.filter(row => row.matched && row.actions.some(action => !action.startsWith("Skip"))).length;
+      const approved = rows.filter(row => row.actions.includes("Change to Approved")).length;
+      const resub = rows.filter(row => row.actions.includes("Change to Re-Submitted")).length;
+
+      els.importSummary.innerHTML = `
+        <div class="import-metric"><span>Matched</span><strong>${matched}</strong></div>
+        <div class="import-metric"><span>Will update</span><strong>${willUpdate}</strong></div>
+        <div class="import-metric"><span>Suggested Approved</span><strong>${approved}</strong></div>
+        <div class="import-metric"><span>Re-Submitted</span><strong>${resub}</strong></div>
+        <div class="import-metric"><span>Unmatched</span><strong>${unmatched}</strong></div>
+      `;
+
+      if (!rows.length) {
+        els.importPreviewWrap.innerHTML = `<div class="empty-state">No submission numbers detected in this file.</div>`;
+        return;
+      }
+
+      const header = `
+        <thead>
+          <tr>
+            <th>Submission No.</th>
+            <th>Current</th>
+            <th>Excel Submitted</th>
+            <th>Reply Rev</th>
+            <th>Reply Date</th>
+            <th>Response</th>
+            <th>Suggested</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+      `;
+
+      const body = `
+        <tbody>
+          ${rows.map(row => `
+            <tr>
+              <td><span class="submission-no">${escapeHtml(row.submissionNo)}</span></td>
+              <td>${row.matched ? `<span class="status-pill ${statusClass(row.currentStatus)}">${escapeHtml(row.currentStatus)}</span>` : "-"}</td>
+              <td>${escapeHtml(row.submittedDate || "-")}</td>
+              <td>${escapeHtml(row.latestReplyRev || "-")}</td>
+              <td>${escapeHtml(row.latestReplyDate || "-")}</td>
+              <td>${escapeHtml(row.latestReplyResponse || "-")}</td>
+              <td>${row.matched ? `<span class="status-pill ${statusClass(row.suggestedStatus)}">${escapeHtml(row.suggestedStatus)}</span>` : `<span class="action-chip action-unmatched">Unmatched</span>`}</td>
+              <td>${row.actions.map(action => `<span class="action-chip ${actionClass(action)}">${escapeHtml(action)}</span>`).join("")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      `;
+
+      els.importPreviewWrap.innerHTML = `<table>${header}${body}</table>`;
+    }
+
+    function actionClass(action) {
+      if (action.includes("Approved")) return "action-approved";
+      if (action.includes("Re-Submitted")) return "action-resubmitted";
+      if (action.includes("Skip")) return "action-skip";
+      if (action.includes("Unmatched")) return "action-unmatched";
+      return "action-update";
+    }
+
+    async function confirmWeeklyImport() {
+      if (!adminUnlocked) {
+        showToast("Please unlock Admin mode first.");
+        return;
+      }
+      const rowsToUpdate = pendingImportRows.filter(row => row.matched && row.actions.some(action => !action.startsWith("Skip")));
+      if (!rowsToUpdate.length) {
+        showToast("No updates to import.");
+        return;
+      }
+      const confirmed = confirm(`Confirm import and update ${rowsToUpdate.length} records in Supabase?`);
+      if (!confirmed) return;
+
+      els.confirmImportBtn.disabled = true;
+      let updated = 0;
+      let failed = 0;
+
+      for (const row of rowsToUpdate) {
+        const payload = row.updatePayload || {};
+        const { error } = await supabaseClient
+          .from("progress_records")
+          .update(payload)
+          .eq("id", row.record.id);
+        if (error) {
+          console.error(error);
+          failed += 1;
+        } else {
+          updated += 1;
+        }
+      }
+
+      await loadFromSupabase();
+      renderAll(true);
+      renderImportPreview(pendingImportRows);
+      els.importStatusText.textContent = `Import completed: ${updated} updated, ${failed} failed`;
+      showToast(`Weekly import completed: ${updated} updated`);
+    }
+
+
     function daysPending(submittedDate) {
       if (!submittedDate) return 0;
       const submitted = new Date(submittedDate);
@@ -1433,6 +1967,7 @@
         "In Progress": "Progress",
         "Internal Review": "Review",
         "Submitted": "Submitted",
+        "Re-Submitted": "Re-Sub",
         "Approved": "Approved",
         "On Hold": "On Hold"
       };
