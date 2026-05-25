@@ -629,7 +629,7 @@
 
     .import-summary {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 10px;
       padding: 14px 18px;
       border-bottom: 1px solid var(--line);
@@ -844,21 +844,21 @@
       <div class="import-modal-header">
         <div>
           <h2>Import Weekly Excel</h2>
-          <p>Read AP/AQ/AV/AW/AX/AY from the weekly submission register, preview changes, then update Supabase.</p>
+          <p>Read only relevant submission groups from Excel, preview changes, then update Supabase.</p>
         </div>
         <button id="closeImportModalBtn" type="button">Close</button>
       </div>
       <div class="import-controls">
         <input id="weeklyExcelModalInput" type="file" accept=".xlsx,.xls" />
         <button class="primary-btn" id="parseExcelBtn" type="button">Preview Import</button>
-        <span class="readonly-note">Match by Submission No.</span>
+        <span class="readonly-note">Filtered: CIV-33180 / 33250 / 33260 / 33270</span>
       </div>
       <div class="import-summary" id="importSummary"></div>
       <div class="import-preview-wrap" id="importPreviewWrap">
         <div class="empty-state">Select a weekly Excel file, then click Preview Import.</div>
       </div>
       <div class="import-modal-footer">
-        <div class="readonly-note" id="importStatusText">No file parsed yet.</div>
+        <div class="readonly-note" id="importStatusText">No file parsed yet. Only CIV-33180, CIV-33250, CIV-33260 and CIV-33270 will be imported.</div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button id="cancelImportBtn" type="button">Cancel</button>
           <button class="primary-btn" id="confirmImportBtn" type="button" disabled>Confirm Import to Supabase</button>
@@ -873,6 +873,7 @@
     const SUPABASE_URL = "https://quzlpwfomatazvidqacs.supabase.co";
     const SUPABASE_KEY = "sb_publishable_JBBQ2uXJhc1GfWR24Q9jSA_xQqiIYad";
     const ADMIN_PIN = "1234";
+    const ALLOWED_IMPORT_PREFIXES = ["CIV-33180", "CIV-33250", "CIV-33260", "CIV-33270"];
 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -894,6 +895,7 @@
     let adminUnlocked = sessionStorage.getItem("gfe_progress_admin_unlocked") === "true";
     let pendingImportRows = [];
     let pendingImportFileName = "";
+    let ignoredUnrelatedRows = 0;
 
     const els = {
       kpiGrid: document.getElementById("kpiGrid"),
@@ -1585,10 +1587,11 @@
       }
       pendingImportRows = [];
       pendingImportFileName = "";
+      ignoredUnrelatedRows = 0;
       els.weeklyExcelModalInput.value = "";
       els.importSummary.innerHTML = "";
       els.importPreviewWrap.innerHTML = `<div class="empty-state">Select a weekly Excel file, then click Preview Import.</div>`;
-      els.importStatusText.textContent = "No file parsed yet.";
+      els.importStatusText.textContent = "No file parsed yet. Only CIV-33180, CIV-33250, CIV-33260 and CIV-33270 will be imported.";
       els.confirmImportBtn.disabled = true;
       els.importModal.classList.add("show");
     }
@@ -1613,7 +1616,7 @@
         pendingImportRows = buildWeeklyImportPreview(rows, file.name);
         renderImportPreview(pendingImportRows);
         els.confirmImportBtn.disabled = !pendingImportRows.some(row => row.matched && row.actions.length);
-        els.importStatusText.textContent = `Parsed ${file.name} · ${pendingImportRows.length} relevant rows`;
+        els.importStatusText.textContent = `Parsed ${file.name} · ${pendingImportRows.length} relevant rows · ${ignoredUnrelatedRows} unrelated rows ignored`;
       } catch (error) {
         console.error(error);
         showToast("Cannot read Excel file. Please check file format.");
@@ -1622,11 +1625,22 @@
 
     function buildWeeklyImportPreview(rows, fileName) {
       const preview = [];
-      const seenSubmission = new Set();
+      const seenSubmissionRows = new Set();
+      ignoredUnrelatedRows = 0;
+
       rows.forEach((row, index) => {
         const submissionNo = findSubmissionNoInRow(row);
         if (!submissionNo) return;
-        if (seenSubmission.has(`${submissionNo}-${index}`)) return;
+
+        if (!isRelevantSubmissionNo(submissionNo)) {
+          ignoredUnrelatedRows += 1;
+          return;
+        }
+
+        const rowKey = `${submissionNo}-${index}`;
+        if (seenSubmissionRows.has(rowKey)) return;
+        seenSubmissionRows.add(rowKey);
+
         const record = records.find(item => normalizeSubmissionNo(item.submissionNo) === normalizeSubmissionNo(submissionNo));
 
         const excelData = {
@@ -1666,6 +1680,11 @@
         });
       });
       return preview;
+    }
+
+    function isRelevantSubmissionNo(submissionNo) {
+      const normalized = normalizeSubmissionNo(submissionNo);
+      return ALLOWED_IMPORT_PREFIXES.some(prefix => normalized.startsWith(prefix));
     }
 
     function findSubmissionNoInRow(row) {
@@ -1825,10 +1844,11 @@
         <div class="import-metric"><span>Suggested Approved</span><strong>${approved}</strong></div>
         <div class="import-metric"><span>Re-Submitted</span><strong>${resub}</strong></div>
         <div class="import-metric"><span>Unmatched</span><strong>${unmatched}</strong></div>
+        <div class="import-metric"><span>Ignored unrelated</span><strong>${ignoredUnrelatedRows}</strong></div>
       `;
 
       if (!rows.length) {
-        els.importPreviewWrap.innerHTML = `<div class="empty-state">No submission numbers detected in this file.</div>`;
+        els.importPreviewWrap.innerHTML = `<div class="empty-state">No relevant submission numbers detected. Unrelated groups were ignored automatically.</div>`;
         return;
       }
 
